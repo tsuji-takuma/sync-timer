@@ -54,11 +54,18 @@
       align-self:center;
       font-variant-numeric:tabular-nums;
       text-align:center; font-weight:1000; line-height:.88;
-      /* 短辺連動で極大化：最小260px・理想 72vmin・最大 92vmin  */
-      font-size: clamp(260px, 72vmin, 92vmin);
+  /* 短辺に応じて縮小しやすくしつつ大型画面でも十分なサイズを確保 */
+  font-size: clamp(96px, 30vmin, 60vmin);
       letter-spacing:.02em; margin:0;
       text-shadow: 0 0 2px rgba(0,0,0,.6);
-      overflow-wrap: anywhere;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 768px){
+      .time{
+        font-size: clamp(64px, 24vmin, 36vmin);
+        letter-spacing:.015em;
+      }
     }
 
     /* ===== 次フェーズ表示：やや大きめだが邪魔しない ===== */
