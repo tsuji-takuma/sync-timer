@@ -81,6 +81,7 @@
       </div>
     </div>
 
+    <footer>サーバ時刻に同期して動作します。通信不安定時も再接続後に自動復帰。</footer>
   </div>
 
   <!-- Firebase v9+ modular SDK (ESM via CDN) -->
@@ -88,11 +89,11 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
     import { getDatabase, ref, onValue, update, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
-    // ==== 1) Firebase 設定（必要ならあなたの値に置換）====
+    // ==== 1) Firebase 設定 ====
     const firebaseConfig = {
       apiKey: "AIzaSyDo1vyMmbYQHJQZ8pjKapcwR-6H0-c_VsU",
       authDomain: "sync-timer-c3d72.firebaseapp.com",
-      databaseURL: "https://sync-timer-c3d72-default-rtdb.firebaseio.com", // ← 末尾スラッシュなし
+      databaseURL: "https://sync-timer-c3d72-default-rtdb.firebaseio.com",
       projectId: "sync-timer-c3d72",
       storageBucket: "sync-timer-c3d72.firebasestorage.app",
       messagingSenderId: "788466695958",
@@ -102,16 +103,14 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // ==== 2) DOM 参照 ====
+    // ==== 2) DOM ====
     const phaseBadge = document.getElementById('phaseBadge');
-    const timeText = document.getElementById('timeText');
-    const subText = document.getElementById('subText');
+    const timeText   = document.getElementById('timeText');
+    const subText    = document.getElementById('subText');
 
-    const adminPanel = document.getElementById('adminPanel');
-    const loginPanel = document.getElementById('loginPanel');
-    const authState = document.getElementById('authState');
-    const loginBtn = document.getElementById('loginBtn');
-    const logoutBtn = document.getElementById('logoutBtn');
+    const authState  = document.getElementById('authState');
+    const loginBtn   = document.getElementById('loginBtn');
+    const logoutBtn  = document.getElementById('logoutBtn');
     const doLoginBtn = document.getElementById('doLoginBtn');
     const passphraseInput = document.getElementById('passphrase');
 
@@ -122,10 +121,10 @@
     const startBtn = document.getElementById('startBtn');
     const pauseBtn = document.getElementById('pauseBtn');
     const resetBtn = document.getElementById('resetBtn');
-    const skipBtn = document.getElementById('skipBtn');
+    const skipBtn  = document.getElementById('skipBtn');
     const applyBtn = document.getElementById('applyBtn');
 
-    // ==== 3) ユーティリティ ====
+    // ==== 3) Utils ====
     const getClientId = () => {
       let id = localStorage.getItem('clientId');
       if (!id) {
@@ -142,36 +141,30 @@
       .toLowerCase();
     const hex = (buf) => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 
-    // サーバ時刻オフセット（ms）
-    let serverOffset = 0;
-    let offsetReady = false;
+    // サーバ時刻（オフセットは接続時に計算される）
+    let serverOffset = 0, offsetReady = false;
     onValue(ref(db, '.info/serverTimeOffset'), snap => {
-      serverOffset = snap.val() || 0;
-      offsetReady = true;
+      serverOffset = snap.val() || 0; offsetReady = true;
     });
     const serverNow = () => Date.now() + serverOffset;
-    const waitForOffset = () => new Promise(r => {
-      if (offsetReady) return r();
-      const t = setInterval(() => { if (offsetReady) { clearInterval(t); r(); } }, 50);
-    });
 
     // ==== 4) タイマー状態 ====
     const TIMER_REF = ref(db, 'timer');
-    let timer = null;      // RTDB 上の現在状態
-    let isAdmin = false;   // 権限フラグ（ローカル）
-    let sessionExp = 0;    // セッション失効時刻（クライアント保持）
+    let timer = null;
+    let isAdmin = false;
+    let sessionExp = 0;
 
     const defaultTimer = () => ({
-      status: 'stopped',                // 'running' | 'paused' | 'stopped'
-      currentPhase: 'performance',      // 'performance' | 'setup'
-      endTime: null,                    // running のときのみ有効（ms since epoch）
-      remainingTime: 15 * 60 * 1000,    // paused/stopped の表示に利用
+      status: 'stopped',
+      currentPhase: 'performance',
+      endTime: null,
+      remainingTime: 15 * 60 * 1000,
       settings: {
         performanceDuration: 15 * 60 * 1000,
         setupDuration: 5 * 60 * 1000,
         isLoopMode: true,
       },
-      meta: { actor: CLIENT_ID },       // 最終操作端末 ID（ルール検証に利用）
+      meta: { actor: CLIENT_ID },
       lastUpdated: serverTimestamp(),
     });
 
@@ -179,12 +172,17 @@
     const phaseClass = (p) => p === 'performance' ? 'badge play' : 'badge setup';
     const nextPhase  = (p) => p === 'performance' ? 'setup' : 'performance';
 
-    const fmtMS = (ms) => { ms = Math.max(0, ms|0); const total = Math.floor(ms/1000); const m = String(Math.floor(total/60)).padStart(2,'0'); const s = String(total%60).padStart(2,'0'); return `${m}:${s}`; };
-    const fmtClock = (ts) => new Date(ts).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    const fmtMS   = (ms) => { ms = Math.max(0, ms|0); const t = Math.floor(ms/1000); const m = String(Math.floor(t/60)).padStart(2,'0'); const s = String(t%60).padStart(2,'0'); return `${m}:${s}`; };
+    const fmtClock= (ts) => new Date(ts).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
     const durationOf = (phase, t = timer) => phase === 'performance' ? (t?.settings?.performanceDuration || 0) : (t?.settings?.setupDuration || 0);
 
-    const render = () => {
+    /** 画面更新
+     * @param {boolean} updateInputs - 入力欄（perfMin/setupMin/loopMode）もDB値で同期するか
+     */
+    const render = (updateInputs=false) => {
       if (!timer) return;
+
+      // 時刻・フェーズ
       let remain = 0;
       if (timer.status === 'running' && timer.endTime) { remain = Math.max(0, timer.endTime - serverNow()); }
       else { remain = timer.remainingTime || durationOf(timer.currentPhase); }
@@ -199,28 +197,35 @@
       const startAt = (timer.status === 'running' && timer.endTime) ? fmtClock(timer.endTime) : '—';
       subText.textContent = `次: ${npLabel} (${fmtMS(npDur)}) ／ 開始予定: ${startAt}`;
 
+      // ボタン有効/無効
       [startBtn, pauseBtn, resetBtn, skipBtn, applyBtn].forEach(b => b.disabled = !isAdmin);
 
-      perfMin.value = Math.floor((timer.settings?.performanceDuration || 900000) / 60000);
-      setupMin.value = Math.floor((timer.settings?.setupDuration || 300000) / 60000);
-      loopMode.checked = !!timer.settings?.isLoopMode;
+      // 入力欄の同期（必要時のみ & フォーカス中は上書きしない）
+      if (updateInputs) {
+        const ae = document.activeElement;
+        if (ae !== perfMin)   perfMin.value  = Math.floor((timer.settings?.performanceDuration ?? 900000) / 60000);
+        if (ae !== setupMin)  setupMin.value = Math.floor((timer.settings?.setupDuration ?? 300000) / 60000);
+        if (ae !== loopMode)  loopMode.checked = !!timer.settings?.isLoopMode;
+      }
     };
 
-    onValue(TIMER_REF, snap => { timer = snap.exists() ? snap.val() : null; render(); });
+    // DB変化時：UIと入力欄を同期
+    onValue(TIMER_REF, snap => {
+      timer = snap.exists() ? snap.val() : null;
+      render(true); // ← 入力欄も同期
+    });
 
     // ==== 5) 合言葉セッション ====
-    const openLogin = () => { loginPanel.style.display = 'block'; passphraseInput.focus(); };
-    const closeLogin = () => { loginPanel.style.display = 'none'; };
+    const openLogin = () => { document.getElementById('loginPanel').style.display = 'block'; passphraseInput.focus(); };
+    const closeLogin = () => { document.getElementById('loginPanel').style.display = 'none'; };
     const showAdmin = () => {
       authState.textContent = `🔓 管理者: ON（~${fmtClock(sessionExp)}）`;
-      loginBtn.style.display = 'none';
-      logoutBtn.style.display = 'inline-block';
-      isAdmin = true; render();
+      loginBtn.style.display = 'none'; logoutBtn.style.display = 'inline-block';
+      isAdmin = true; render(); // 入力欄は触らない
     };
     const hideAdmin = () => {
       authState.textContent = '🔒 管理者モード: OFF';
-      loginBtn.style.display = 'inline-block';
-      logoutBtn.style.display = 'none';
+      loginBtn.style.display = 'inline-block'; logoutBtn.style.display = 'none';
       isAdmin = false; render();
     };
 
@@ -241,14 +246,10 @@
       sessionExp = exp;
       closeLogin();
       showAdmin();
-      // 初回（DBが空）のとき、デフォルト状態を作る
-      if (!timer) {
-        await set(TIMER_REF, defaultTimer());
-      }
+      if (!timer) await set(TIMER_REF, defaultTimer());
     }
 
     doLoginBtn.addEventListener('click', async () => {
-      await waitForOffset(); // オフセット取得を待つ（初動のズレ防止）
       const pw = passphraseInput.value.trim();
       if(!pw) { alert('合言葉を入力してください'); return; }
       try {
@@ -260,7 +261,7 @@
       }
     });
 
-    // 失効チェック（クライアント側の表示用）
+    // 失効チェック（表示用）
     setInterval(() => { if (isAdmin && serverNow() > sessionExp) hideAdmin(); }, 1000);
 
     // ==== 6) 管理者操作 ====
@@ -283,7 +284,6 @@
     const cmd_reset = () => {
       const perf = Math.max(1, parseInt(perfMin.value || '15', 10)) * 60000;
       const setup = Math.max(1, parseInt(setupMin.value || '5', 10)) * 60000;
-      // defaultを書いてから明示上書き（念のため）
       set(TIMER_REF, defaultTimer()).then(() => {
         write({
           status: 'stopped',
@@ -304,12 +304,15 @@
     };
 
     const cmd_apply = () => {
-      const perf = Math.max(1, parseInt(perfMin.value || '15', 10)) * 60000;
+      const perf  = Math.max(1, parseInt(perfMin.value || '15', 10)) * 60000;
       const setup = Math.max(1, parseInt(setupMin.value || '5', 10)) * 60000;
       const isLoop = !!loopMode.checked;
       const obj = { settings: { performanceDuration: perf, setupDuration: setup, isLoopMode: isLoop } };
-      if (timer && timer.status !== 'running') obj.remainingTime = durationOf(timer.currentPhase, { settings: { performanceDuration: perf, setupDuration: setup } });
+      if (timer && timer.status !== 'running') {
+        obj.remainingTime = durationOf(timer.currentPhase, { settings: { performanceDuration: perf, setupDuration: setup } });
+      }
       write(obj);
+      // 入力欄を触っている最中でも、DB反映後に onValue で同期される
     };
 
     startBtn.addEventListener('click', cmd_start);
@@ -318,25 +321,11 @@
     skipBtn.addEventListener('click', cmd_skip);
     applyBtn.addEventListener('click', cmd_apply);
 
-    // ==== 7) 表示更新＆自動遷移 ====
-    // A) 全員：表示だけ更新（DBは触らない）
-    setInterval(() => { render(); }, 250); // バッテリー気にするなら 500ms でもOK
+    // ==== 7) 表示だけは全員で定期更新 ====
+    setInterval(() => { render(false); }, 250);
 
-    // B) 管理者だけ：フェーズ自動遷移（DBに書き込み）
-    setInterval(() => {
-      if (!isAdmin || !timer) return;
-      if (timer.status === 'running' && timer.endTime && serverNow() >= timer.endTime) {
-        if (timer.settings?.isLoopMode) {
-          const np = nextPhase(timer.currentPhase);
-          write({ currentPhase: np, endTime: serverNow() + durationOf(np), status: 'running' });
-        } else {
-          write({ status: 'stopped', endTime: null, remainingTime: 0 });
-        }
-      }
-    }, 250);
-
-    // タブ復帰時に一度描画（視覚ジャンプ抑制）
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+    // タブ復帰時に一度描画
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) render(false); });
   </script>
 </body>
 </html>
