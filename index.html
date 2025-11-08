@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>軽音サークル・同期タイマー</title>
+  <style>
+    :root { --bg:#0b0c10; --fg:#e6e6e6; --accent-play:#1db954; --accent-setup:#ffb020; --muted:#9aa0a6; --card:#111318; --danger:#ff4d4f; }
+    *{box-sizing:border-box} html,body{height:100%} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif;background:radial-gradient(1200px 800px at 50% -10%,#151a20 0%,var(--bg) 60%);color:var(--fg);display:grid;place-items:center;padding:16px}
+    .app{width:min(720px,100%)} header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px} header h1{font-size:18px;font-weight:600;margin:0;color:#cbd5e1}
+    .badge{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;font-weight:700;letter-spacing:.02em}
+    .badge.play{background:color-mix(in hsl,var(--accent-play) 20%,transparent);color:var(--accent-play);border:1px solid color-mix(in hsl,var(--accent-play) 50%,transparent)}
+    .badge.setup{background:color-mix(in hsl,var(--accent-setup) 20%,transparent);color:var(--accent-setup);border:1px solid color-mix(in hsl,var(--accent-setup) 50%,transparent)}
+    .timer{background:var(--card);border:1px solid #222531;border-radius:24px;padding:28px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .time{font-variant-numeric:tabular-nums;text-align:center;font-weight:800;line-height:1;font-size:clamp(48px,14vw,120px);letter-spacing:.03em;margin:10px 0 4px}
+    .sub{text-align:center;color:var(--muted);font-size:14px}
+    .controls{margin-top:18px;display:grid;gap:12px} .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    button,input,select{font:inherit} button{padding:12px 14px;border-radius:12px;background:#1a1f2b;color:#e5e7eb;border:1px solid #283042;cursor:pointer} button:hover{filter:brightness(1.05)} button:disabled{opacity:.5;cursor:not-allowed}
+    .btn-primary{background:#22314d;border-color:#2b3c5f} .btn-danger{background:#351a1a;border-color:#5a2525;color:#ffb3b3} .btn-ghost{background:transparent;border-color:#2b3040}
+    .card{background:#0f1218;border:1px solid #222531;border-radius:16px;padding:16px} .card h3{margin:0 0 8px;font-size:14px;color:#cbd5e1}
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px} .field{display:grid;gap:6px} .field label{font-size:12px;color:var(--muted)} .field input[type="number"]{padding:10px 12px;border-radius:10px;border:1px solid #2b3040;background:#0c0f14;color:var(--fg)} .switch{display:flex;align-items:center;gap:8px}
+    .adminbar{display:flex;gap:8px;align-items:center} .muted{color:var(--muted);font-size:12px}
+    footer{margin-top:14px;text-align:center;font-size:12px;color:#7b8797}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>軽音サークル・同期タイマー</h1>
+      <div class="adminbar">
+        <span id="authState" class="muted">🔒 管理者モード: OFF</span>
+        <button id="loginBtn" class="btn-ghost">合言葉で管理者ON</button>
+        <button id="logoutBtn" class="btn-ghost" style="display:none">管理者OFF</button>
+      </div>
+    </header>
+
+    <div class="timer">
+      <div id="phaseBadge" class="badge play">演奏中</div>
+      <div id="timeText" class="time">15:00</div>
+      <div id="subText" class="sub">次: 転換 (5:00) ／ 開始予定: —</div>
+
+      <div id="adminPanel" class="controls" style="display:block">
+        <div id="loginPanel" class="card" style="display:none">
+          <h3>合言葉（ひらがな）</h3>
+          <div class="row">
+            <input type="text" id="passphrase" placeholder="ひらがなで入力" />
+            <button id="doLoginBtn" class="btn-primary">管理者モードON</button>
+          </div>
+          <div class="muted" style="margin-top:6px">* 2時間で自動失効します</div>
+        </div>
+
+        <div class="card">
+          <h3>設定</h3>
+          <div class="grid-3">
+            <div class="field">
+              <label>演奏（分）</label>
+              <input type="number" id="perfMin" min="1" max="120" value="15" />
+            </div>
+            <div class="field">
+              <label>転換（分）</label>
+              <input type="number" id="setupMin" min="1" max="60" value="5" />
+            </div>
+            <div class="field switch">
+              <input type="checkbox" id="loopMode" checked />
+              <label for="loopMode">交互ループ</label>
+            </div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button id="applyBtn" class="btn-primary">設定を保存</button>
+            <button id="resetBtn" class="btn-danger">リセット</button>
+          </div>
+        </div>
+
+        <div class="row">
+          <button id="startBtn">スタート</button>
+          <button id="pauseBtn">一時停止</button>
+        </div>
+        <div>
+          <button id="skipBtn">次のフェーズへスキップ</button>
+        </div>
+      </div>
+    </div>
+
+    <footer>サーバ時刻に同期して動作します。通信不安定時も再接続後に自動復帰。</footer>
+  </div>
+
+  <!-- Firebase v9+ modular SDK (ESM via CDN) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+    import { getDatabase, ref, onValue, update, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+    // 1) Firebase 設定（自分のプロジェクト情報に置き換え）
+    const firebaseConfig = {
+      apiKey: "AIzaSyDo1vyMmbYQHJQZ8pjKapcwR-6H0-c_VsU",
+      authDomain: "sync-timer-c3d72.firebaseapp.com",
+      databaseURL: "https://sync-timer-c3d72-default-rtdb.firebaseio.com/",
+      projectId: "sync-timer-c3d72",
+      storageBucket: "sync-timer-c3d72.firebasestorage.app",
+      messagingSenderId: "788466695958",
+      appId: "1:788466695958:web:e57ee07c59ff2d686f9a37"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // 2) DOM 参照
+    const phaseBadge = document.getElementById('phaseBadge');
+    const timeText = document.getElementById('timeText');
+    const subText = document.getElementById('subText');
+
+    const adminPanel = document.getElementById('adminPanel');
+    const loginPanel = document.getElementById('loginPanel');
+    const authState = document.getElementById('authState');
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const doLoginBtn = document.getElementById('doLoginBtn');
+    const passphraseInput = document.getElementById('passphrase');
+
+    const perfMin = document.getElementById('perfMin');
+    const setupMin = document.getElementById('setupMin');
+    const loopMode = document.getElementById('loopMode');
+
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const skipBtn = document.getElementById('skipBtn');
+    const applyBtn = document.getElementById('applyBtn');
+
+    // 3) ユーティリティ
+    const getClientId = () => {
+      let id = localStorage.getItem('clientId');
+      if (!id) {
+        id = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+        localStorage.setItem('clientId', id);
+      }
+      return id;
+    };
+    const CLIENT_ID = getClientId();
+
+    const toHiragana = (s) => s.normalize('NFKC')
+      .replace(/[ァ-ン]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60))
+      .replaceAll(' ', '').replaceAll('　','')
+      .toLowerCase();
+    const hex = (buf) => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+
+    // サーバ時刻オフセット
+    let serverOffset = 0; // ms
+    onValue(ref(db, '.info/serverTimeOffset'), snap => { serverOffset = snap.val() || 0; });
+    const serverNow = () => Date.now() + serverOffset;
+
+    // 4) タイマー状態
+    const TIMER_REF = ref(db, 'timer');
+    let timer = null;      // RTDB 上の現在状態
+    let isAdmin = false;   // 権限フラグ（ローカル）
+    let sessionExp = 0;    // セッション失効時刻（クライアント保持）
+
+    const defaultTimer = () => ({
+      status: 'stopped',
+      currentPhase: 'performance',
+      endTime: null,
+      remainingTime: 15 * 60 * 1000,
+      settings: {
+        performanceDuration: 15 * 60 * 1000,
+        setupDuration: 5 * 60 * 1000,
+        isLoopMode: true,
+      },
+      meta: { actor: CLIENT_ID },
+      lastUpdated: serverTimestamp(),
+    });
+
+    const phaseLabel = (p) => p === 'performance' ? '演奏中' : '転換中';
+    const phaseClass = (p) => p === 'performance' ? 'badge play' : 'badge setup';
+    const nextPhase = (p) => p === 'performance' ? 'setup' : 'performance';
+
+    const fmtMS = (ms) => { ms = Math.max(0, ms|0); const total = Math.floor(ms/1000); const m = String(Math.floor(total/60)).padStart(2,'0'); const s = String(total%60).padStart(2,'0'); return `${m}:${s}`; };
+    const fmtClock = (ts) => new Date(ts).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    const durationOf = (phase, t = timer) => phase === 'performance' ? (t?.settings?.performanceDuration || 0) : (t?.settings?.setupDuration || 0);
+
+    const render = () => {
+      if (!timer) return;
+      let remain = 0;
+      if (timer.status === 'running' && timer.endTime) { remain = Math.max(0, timer.endTime - serverNow()); }
+      else { remain = timer.remainingTime || durationOf(timer.currentPhase); }
+      timeText.textContent = fmtMS(remain);
+
+      phaseBadge.textContent = phaseLabel(timer.currentPhase);
+      phaseBadge.className = phaseClass(timer.currentPhase);
+
+      const np = nextPhase(timer.currentPhase);
+      const npDur = durationOf(np);
+      const npLabel = np === 'performance' ? '演奏' : '転換';
+      const startAt = (timer.status === 'running' && timer.endTime) ? fmtClock(timer.endTime) : '—';
+      subText.textContent = `次: ${npLabel} (${fmtMS(npDur)}) ／ 開始予定: ${startAt}`;
+
+      [startBtn, pauseBtn, resetBtn, skipBtn, applyBtn].forEach(b => b.disabled = !isAdmin);
+
+      perfMin.value = Math.floor((timer.settings?.performanceDuration || 900000) / 60000);
+      setupMin.value = Math.floor((timer.settings?.setupDuration || 300000) / 60000);
+      loopMode.checked = !!timer.settings?.isLoopMode;
+    };
+
+    onValue(TIMER_REF, snap => { timer = snap.exists() ? snap.val() : null; render(); });
+
+    // 5) 合言葉セッション
+    const openLogin = () => { loginPanel.style.display = 'block'; passphraseInput.focus(); };
+    const closeLogin = () => { loginPanel.style.display = 'none'; };
+    const showAdmin = () => {
+      authState.textContent = `🔓 管理者: ON（~${fmtClock(sessionExp)}）`;
+      loginBtn.style.display = 'none';
+      logoutBtn.style.display = 'inline-block';
+      isAdmin = true; render();
+    };
+    const hideAdmin = () => {
+      authState.textContent = '🔒 管理者モード: OFF';
+      loginBtn.style.display = 'inline-block';
+      logoutBtn.style.display = 'none';
+      isAdmin = false; render();
+    };
+
+    loginBtn.addEventListener('click', openLogin);
+    logoutBtn.addEventListener('click', () => { hideAdmin(); });
+
+    async function sha256Hex(str){
+      const buf = new TextEncoder().encode(toHiragana(str));
+      const dig = await crypto.subtle.digest('SHA-256', buf);
+      return hex(dig);
+    }
+
+    async function createSession(pass){
+      const hash = await sha256Hex(pass);
+      const exp = serverNow() + 2*60*60*1000; // 2h
+      const SREF = ref(db, `sessions/${CLIENT_ID}`);
+      await set(SREF, { hash, approved: true, expiresAt: exp });
+      sessionExp = exp;
+      closeLogin();
+      showAdmin();
+    }
+
+    doLoginBtn.addEventListener('click', async () => {
+      const pw = passphraseInput.value.trim();
+      if(!pw) return alert('合言葉を入力してください');
+      try{ await createSession(pw); passphraseInput.value=''; }
+      catch(e){ alert('合言葉が違うか、ルールに弾かれました'); console.error(e); }
+    });
+
+    // 失効チェック
+    setInterval(() => { if (isAdmin && serverNow() > sessionExp) hideAdmin(); }, 1000);
+
+    // 6) 管理者操作
+    const write = (obj) => update(TIMER_REF, { ...obj, lastUpdated: serverTimestamp(), 'meta/actor': CLIENT_ID });
+
+    const cmd_start = () => {
+      if (!timer) return;
+      const base = (timer.status === 'paused') ? (timer.remainingTime || durationOf(timer.currentPhase))
+                 : (timer.status === 'stopped') ? durationOf(timer.currentPhase)
+                 : Math.max(0, (timer.endTime || serverNow()) - serverNow());
+      write({ status: 'running', endTime: serverNow() + base });
+    };
+
+    const cmd_pause = () => {
+      if (!timer) return;
+      const remain = (timer.status === 'running' && timer.endTime) ? Math.max(0, timer.endTime - serverNow()) : (timer.remainingTime || 0);
+      write({ status: 'paused', endTime: null, remainingTime: remain });
+    };
+
+    const cmd_reset = () => {
+      const perf = Math.max(1, parseInt(perfMin.value || '15', 10)) * 60000;
+      const setup = Math.max(1, parseInt(setupMin.value || '5', 10)) * 60000;
+      update(TIMER_REF, defaultTimer());
+      write({
+        status: 'stopped',
+        currentPhase: 'performance',
+        endTime: null,
+        remainingTime: perf,
+        settings: { performanceDuration: perf, setupDuration: setup, isLoopMode: !!loopMode.checked },
+      });
+    };
+
+    const cmd_skip = () => {
+      if (!timer) return;
+      const np = nextPhase(timer.currentPhase);
+      const dur = durationOf(np);
+      if (timer.status === 'running') write({ currentPhase: np, endTime: serverNow() + dur, status: 'running' });
+      else write({ currentPhase: np, remainingTime: dur, endTime: null });
+    };
+
+    const cmd_apply = () => {
+      const perf = Math.max(1, parseInt(perfMin.value || '15', 10)) * 60000;
+      const setup = Math.max(1, parseInt(setupMin.value || '5', 10)) * 60000;
+      const isLoop = !!loopMode.checked;
+      const obj = { settings: { performanceDuration: perf, setupDuration: setup, isLoopMode: isLoop } };
+      if (timer && timer.status !== 'running') obj.remainingTime = durationOf(timer.currentPhase, { settings: { performanceDuration: perf, setupDuration: setup } });
+      write(obj);
+    };
+
+    startBtn.addEventListener('click', cmd_start);
+    pauseBtn.addEventListener('click', cmd_pause);
+    resetBtn.addEventListener('click', cmd_reset);
+    skipBtn.addEventListener('click', cmd_skip);
+    applyBtn.addEventListener('click', cmd_apply);
+
+    // 7) 自動フェーズ遷移（管理者側のみ推奨だが、ルールで二重起動は抑止される）
+    setInterval(() => {
+      if (!isAdmin || !timer) return;
+      if (timer.status === 'running' && timer.endTime && serverNow() >= timer.endTime) {
+        if (timer.settings?.isLoopMode) {
+          const np = nextPhase(timer.currentPhase);
+          write({ currentPhase: np, endTime: serverNow() + durationOf(np), status: 'running' });
+        } else {
+          write({ status: 'stopped', endTime: null, remainingTime: 0 });
+        }
+      }
+      render();
+    }, 250);
+  </script>
+</body>
+</html>
