@@ -18,7 +18,7 @@
     button,input,select{font:inherit} button{padding:12px 14px;border-radius:12px;background:#1a1f2b;color:#e5e7eb;border:1px solid #283042;cursor:pointer} button:hover{filter:brightness(1.05)} button:disabled{opacity:.5;cursor:not-allowed}
     .btn-primary{background:#22314d;border-color:#2b3c5f} .btn-danger{background:#351a1a;border-color:#5a2525;color:#ffb3b3} .btn-ghost{background:transparent;border-color:#2b3040}
     .card{background:#0f1218;border:1px solid #222531;border-radius:16px;padding:16px} .card h3{margin:0 0 8px;font-size:14px;color:#cbd5e1}
-    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px} .field{display:grid;gap:6px} .field label{font-size:12px;color:var(--muted)} .field input[type="number"]{padding:10px 12px;border-radius:10px;border:1px solid #2b3040;background:#0c0f14;color:var(--fg)} .switch{display:flex;align-items:center;gap:8px}
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px} .field{display:grid;gap:6px} .field label{font-size:12px;color:var(--muted)} .field input[type="number"]{padding:10px 12px;border-radius:10px;border:1px solid #2b3040;background:#0c0f14;color:#fff} .switch{display:flex;align-items:center;gap:8px}
     .adminbar{display:flex;gap:8px;align-items:center} .muted{color:var(--muted);font-size:12px}
     footer{margin-top:14px;text-align:center;font-size:12px;color:#7b8797}
   </style>
@@ -89,11 +89,11 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
     import { getDatabase, ref, onValue, update, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
-    // 1) Firebase 設定
+    // ==== 1) Firebase 設定（必要ならあなたの値に置換）====
     const firebaseConfig = {
       apiKey: "AIzaSyDo1vyMmbYQHJQZ8pjKapcwR-6H0-c_VsU",
       authDomain: "sync-timer-c3d72.firebaseapp.com",
-      databaseURL: "https://sync-timer-c3d72-default-rtdb.firebaseio.com",
+      databaseURL: "https://sync-timer-c3d72-default-rtdb.firebaseio.com", // ← 末尾スラッシュなし
       projectId: "sync-timer-c3d72",
       storageBucket: "sync-timer-c3d72.firebasestorage.app",
       messagingSenderId: "788466695958",
@@ -103,7 +103,7 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // 2) DOM 参照
+    // ==== 2) DOM 参照 ====
     const phaseBadge = document.getElementById('phaseBadge');
     const timeText = document.getElementById('timeText');
     const subText = document.getElementById('subText');
@@ -126,7 +126,7 @@
     const skipBtn = document.getElementById('skipBtn');
     const applyBtn = document.getElementById('applyBtn');
 
-    // 3) ユーティリティ
+    // ==== 3) ユーティリティ ====
     const getClientId = () => {
       let id = localStorage.getItem('clientId');
       if (!id) {
@@ -143,34 +143,42 @@
       .toLowerCase();
     const hex = (buf) => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 
-    // サーバ時刻オフセット
-    let serverOffset = 0; // ms
-    onValue(ref(db, '.info/serverTimeOffset'), snap => { serverOffset = snap.val() || 0; });
+    // サーバ時刻オフセット（ms）
+    let serverOffset = 0;
+    let offsetReady = false;
+    onValue(ref(db, '.info/serverTimeOffset'), snap => {
+      serverOffset = snap.val() || 0;
+      offsetReady = true;
+    });
     const serverNow = () => Date.now() + serverOffset;
+    const waitForOffset = () => new Promise(r => {
+      if (offsetReady) return r();
+      const t = setInterval(() => { if (offsetReady) { clearInterval(t); r(); } }, 50);
+    });
 
-    // 4) タイマー状態
+    // ==== 4) タイマー状態 ====
     const TIMER_REF = ref(db, 'timer');
     let timer = null;      // RTDB 上の現在状態
     let isAdmin = false;   // 権限フラグ（ローカル）
     let sessionExp = 0;    // セッション失効時刻（クライアント保持）
 
     const defaultTimer = () => ({
-      status: 'stopped',
-      currentPhase: 'performance',
-      endTime: null,
-      remainingTime: 15 * 60 * 1000,
+      status: 'stopped',                // 'running' | 'paused' | 'stopped'
+      currentPhase: 'performance',      // 'performance' | 'setup'
+      endTime: null,                    // running のときのみ有効（ms since epoch）
+      remainingTime: 15 * 60 * 1000,    // paused/stopped の表示に利用
       settings: {
         performanceDuration: 15 * 60 * 1000,
         setupDuration: 5 * 60 * 1000,
         isLoopMode: true,
       },
-      meta: { actor: CLIENT_ID },
+      meta: { actor: CLIENT_ID },       // 最終操作端末 ID（ルール検証に利用）
       lastUpdated: serverTimestamp(),
     });
 
     const phaseLabel = (p) => p === 'performance' ? '演奏中' : '転換中';
     const phaseClass = (p) => p === 'performance' ? 'badge play' : 'badge setup';
-    const nextPhase = (p) => p === 'performance' ? 'setup' : 'performance';
+    const nextPhase  = (p) => p === 'performance' ? 'setup' : 'performance';
 
     const fmtMS = (ms) => { ms = Math.max(0, ms|0); const total = Math.floor(ms/1000); const m = String(Math.floor(total/60)).padStart(2,'0'); const s = String(total%60).padStart(2,'0'); return `${m}:${s}`; };
     const fmtClock = (ts) => new Date(ts).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
@@ -201,7 +209,7 @@
 
     onValue(TIMER_REF, snap => { timer = snap.exists() ? snap.val() : null; render(); });
 
-    // 5) 合言葉セッション
+    // ==== 5) 合言葉セッション ====
     const openLogin = () => { loginPanel.style.display = 'block'; passphraseInput.focus(); };
     const closeLogin = () => { loginPanel.style.display = 'none'; };
     const showAdmin = () => {
@@ -234,19 +242,29 @@
       sessionExp = exp;
       closeLogin();
       showAdmin();
+      // 初回（DBが空）のとき、デフォルト状態を作る
+      if (!timer) {
+        await set(TIMER_REF, defaultTimer());
+      }
     }
 
     doLoginBtn.addEventListener('click', async () => {
+      await waitForOffset(); // オフセット取得を待つ（初動のズレ防止）
       const pw = passphraseInput.value.trim();
-      if(!pw) return alert('合言葉を入力してください');
-      try{ await createSession(pw); passphraseInput.value=''; }
-      catch(e){ alert('合言葉が違うか、ルールに弾かれました'); console.error(e); }
+      if(!pw) { alert('合言葉を入力してください'); return; }
+      try {
+        await createSession(pw);
+        passphraseInput.value='';
+      } catch(e){
+        console.error(e);
+        alert('合言葉が違うか、ルールに弾かれました');
+      }
     });
 
-    // 失効チェック
+    // 失効チェック（クライアント側の表示用）
     setInterval(() => { if (isAdmin && serverNow() > sessionExp) hideAdmin(); }, 1000);
 
-    // 6) 管理者操作
+    // ==== 6) 管理者操作 ====
     const write = (obj) => update(TIMER_REF, { ...obj, lastUpdated: serverTimestamp(), 'meta/actor': CLIENT_ID });
 
     const cmd_start = () => {
@@ -266,13 +284,15 @@
     const cmd_reset = () => {
       const perf = Math.max(1, parseInt(perfMin.value || '15', 10)) * 60000;
       const setup = Math.max(1, parseInt(setupMin.value || '5', 10)) * 60000;
-      update(TIMER_REF, defaultTimer());
-      write({
-        status: 'stopped',
-        currentPhase: 'performance',
-        endTime: null,
-        remainingTime: perf,
-        settings: { performanceDuration: perf, setupDuration: setup, isLoopMode: !!loopMode.checked },
+      // defaultを書いてから明示上書き（念のため）
+      set(TIMER_REF, defaultTimer()).then(() => {
+        write({
+          status: 'stopped',
+          currentPhase: 'performance',
+          endTime: null,
+          remainingTime: perf,
+          settings: { performanceDuration: perf, setupDuration: setup, isLoopMode: !!loopMode.checked },
+        });
       });
     };
 
@@ -299,7 +319,11 @@
     skipBtn.addEventListener('click', cmd_skip);
     applyBtn.addEventListener('click', cmd_apply);
 
-    // 7) 自動フェーズ遷移（管理者側のみ推奨だが、ルールで二重起動は抑止される）
+    // ==== 7) 表示更新＆自動遷移 ====
+    // A) 全員：表示だけ更新（DBは触らない）
+    setInterval(() => { render(); }, 250); // バッテリー気にするなら 500ms でもOK
+
+    // B) 管理者だけ：フェーズ自動遷移（DBに書き込み）
     setInterval(() => {
       if (!isAdmin || !timer) return;
       if (timer.status === 'running' && timer.endTime && serverNow() >= timer.endTime) {
@@ -310,8 +334,10 @@
           write({ status: 'stopped', endTime: null, remainingTime: 0 });
         }
       }
-      render();
     }, 250);
+
+    // タブ復帰時に一度描画（視覚ジャンプ抑制）
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
   </script>
 </body>
 </html>
