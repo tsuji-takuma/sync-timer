@@ -5,20 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>同期タイマー</title>
   <style>
-    :root{
-      --bg:#0b0c10; --fg:#e6e6e6; --accent-play:#1db954; --accent-setup:#ffb020;
-      --muted:#9aa0a6; --card:#0f1218; --danger:#ff4d4f; --frame:#222531;
-    }
+    :root{ --bg:#0b0c10; --fg:#e6e6e6; --accent-play:#1db954; --accent-setup:#ffb020; --muted:#9aa0a6; --card:#0f1218; --danger:#ff4d4f; --frame:#222531; }
     *{box-sizing:border-box}
     html,body{height:100%}
     body{
-      margin:0;
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
-      background:radial-gradient(1200px 800px at 50% -10%,#151a20 0%,var(--bg) 60%);
-      color:var(--fg);
-      display:grid; place-items:center; padding:8px;
+      margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+      background:radial-gradient(1200px 800px at 50% -10%,#151a20 0%,var(--bg) 60%);color:var(--fg);
+      display:grid;place-items:center;padding:8px;
     }
-    .app{width:100%; max-width:1800px}
+    .app{width:100%;max-width:1800px}
     header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
     header h1{font-size:14px;font-weight:700;margin:0;color:#cbd5e1;letter-spacing:.02em}
     .adminbar{display:flex;gap:8px;align-items:center}
@@ -29,46 +24,37 @@
     .btn-primary{background:#22314d;border-color:#2b3c5f}
     .btn-danger{background:#351a1a;border-color:#5a2525;color:#ffb3b3}
 
-    /* ===== タイマー枠：ほぼ全画面、高さは svh で安定 ===== */
     .timer{
-      position:relative;
-      background:var(--card); border:1px solid var(--frame); border-radius:24px;
-      padding:12px 16px; box-shadow:0 10px 30px rgba(0,0,0,.25);
-      min-height:min(92svh, 92vh);
-      display:grid; grid-template-rows: 1fr auto; /* 巨大時間＋サブ行 */
+      position:relative;background:var(--card);border:1px solid var(--frame);border-radius:24px;
+      padding:12px 16px;box-shadow:0 10px 30px rgba(0,0,0,.25);
+      min-height:min(92svh,92vh); /* モバイルでも安定する svh 併用 */ 
+      display:grid;grid-template-rows:1fr auto;
     }
 
-    /* ===== 左上の小さめバッジ（固定） ===== */
+    /* 左上だけに小さめ固定バッジ */
     .badge{
-      position:absolute; top:12px; left:14px;
-      border-radius:9999px; font-weight:900; letter-spacing:.02em;
-      padding: clamp(6px, 1vmin, 18px) clamp(10px, 1.8vmin, 28px);
-      font-size: clamp(14px, 2.2vmin, 28px);
-      pointer-events:none; /* クリック邪魔しない */
+      position:absolute;top:12px;left:14px;border-radius:9999px;font-weight:900;letter-spacing:.02em;
+      padding:clamp(6px,1vmin,18px) clamp(10px,1.8vmin,28px);
+      font-size:clamp(14px,2.2vmin,28px);pointer-events:none;
     }
     .badge.play{background:color-mix(in hsl,var(--accent-play) 20%,transparent);color:var(--accent-play);border:1px solid color-mix(in hsl,var(--accent-play) 50%,transparent)}
     .badge.setup{background:color-mix(in hsl,var(--accent-setup) 20%,transparent);color:var(--accent-setup);border:1px solid color-mix(in hsl,var(--accent-setup) 50%,transparent)}
 
-    /* ===== 画面いっぱい級の巨大カウントダウン ===== */
+    /* 巨大時間エリア：中央に収めるためのラッパ */
+    #timeWrap{display:flex;align-items:center;justify-content:center;min-height:0;min-width:0}
+
+    /* 数字は絶対に改行させない */
     .time{
-      align-self:center;
+      white-space:nowrap;              /* ← 改行禁止（以前の overflow-wrap:anywhere を削除） */
       font-variant-numeric:tabular-nums;
-      text-align:center; font-weight:1000; line-height:.88;
-      /* 短辺連動で極大化：最小260px・理想 72vmin・最大 92vmin  */
-      font-size: clamp(260px, 72vmin, 92vmin);
-      letter-spacing:.02em; margin:0;
-      text-shadow: 0 0 2px rgba(0,0,0,.6);
-      overflow-wrap: anywhere;
+      text-align:center;font-weight:1000;line-height:.9;
+      font-size:20vmin;                /* 初期値（JSで上書き） */
+      letter-spacing:.02em;margin:0;text-shadow:0 0 2px rgba(0,0,0,.6);
     }
 
-    /* ===== 次フェーズ表示：やや大きめだが邪魔しない ===== */
-    .sub{
-      text-align:center; color:var(--muted);
-      font-size: clamp(16px, 2.6vmin, 36px);
-      margin-top:8px;
-    }
+    .sub{ text-align:center;color:var(--muted);font-size:clamp(16px,2.6vmin,36px);margin-top:8px }
 
-    /* ===== 管理UI（管理者ONの時だけ） ===== */
+    /* 管理UI（管理者ONの時だけ） */
     .panel{margin-top:10px;display:grid;gap:10px}
     .card{background:#0c1016;border:1px solid var(--frame);border-radius:16px;padding:14px}
     .card h3{margin:0 0 8px;font-size:14px;color:#cbd5e1}
@@ -78,7 +64,6 @@
     .field input[type="number"]{padding:10px 12px;border-radius:10px;border:1px solid #2b3040;background:#0c0f14;color:#fff}
     .switch{display:flex;align-items:center;gap:8px}
 
-    /* ログインモーダル */
     .modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(0,0,0,.4);padding:16px;z-index:50}
     .modal .sheet{width:min(520px,100%);background:#0f1218;border:1px solid var(--frame);border-radius:16px;padding:16px}
   </style>
@@ -97,41 +82,31 @@
 
     <div class="timer">
       <div id="phaseBadge" class="badge play">演奏中</div>
-      <div id="timeText" class="time">15:00</div>
+
+      <!-- 巨大時間（自動フィット用ラッパ） -->
+      <div id="timeWrap">
+        <div id="timeText" class="time">15:00</div>
+      </div>
+
       <div>
         <div id="subText" class="sub">次: 転換 (5:00) ／ 開始予定: —</div>
-
-        <!-- 管理UI：管理者ONの時だけ display:grid -->
         <div id="adminControls" class="panel" style="display:none">
           <div class="card">
             <h3>設定</h3>
             <div class="grid-3">
-              <div class="field">
-                <label>演奏（分）</label>
-                <input type="number" id="perfMin" min="1" max="120" value="15" />
-              </div>
-              <div class="field">
-                <label>転換（分）</label>
-                <input type="number" id="setupMin" min="1" max="60" value="5" />
-              </div>
-              <div class="field switch">
-                <input type="checkbox" id="loopMode" checked />
-                <label for="loopMode">交互ループ</label>
-              </div>
+              <div class="field"><label>演奏（分）</label><input type="number" id="perfMin" min="1" max="120" value="15" /></div>
+              <div class="field"><label>転換（分）</label><input type="number" id="setupMin" min="1" max="60" value="5" /></div>
+              <div class="field switch"><input type="checkbox" id="loopMode" checked /><label for="loopMode">交互ループ</label></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
               <button id="applyBtn" class="btn-primary">設定を保存</button>
               <button id="resetBtn" class="btn-danger">リセット</button>
             </div>
           </div>
-
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <button id="startBtn">スタート</button>
-            <button id="pauseBtn">一時停止</button>
+            <button id="startBtn">スタート</button><button id="pauseBtn">一時停止</button>
           </div>
-          <div>
-            <button id="skipBtn">次のフェーズへスキップ</button>
-          </div>
+          <div><button id="skipBtn">次のフェーズへスキップ</button></div>
         </div>
       </div>
     </div>
@@ -149,12 +124,12 @@
     </div>
   </div>
 
-  <!-- Firebase v9+ modular SDK (ESM via CDN) -->
+  <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
     import { getDatabase, ref, onValue, update, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
-    // ==== Firebase 設定（あなたの値のまま） ====
+    /* Firebase 設定（あなたの値のまま） */
     const firebaseConfig = {
       apiKey: "AIzaSyDo1vyMmbYQHJQZ8pjKapcwR-6H0-c_VsU",
       authDomain: "sync-timer-c3d72.firebaseapp.com",
@@ -167,10 +142,11 @@
     const app = initializeApp(firebaseConfig);
     const db  = getDatabase(app);
 
-    // ==== DOM ====
+    /* ===== DOM ===== */
+    const timeWrap = document.getElementById('timeWrap');
+    const timeText = document.getElementById('timeText');
+    const subText  = document.getElementById('subText');
     const phaseBadge = document.getElementById('phaseBadge');
-    const timeText   = document.getElementById('timeText');
-    const subText    = document.getElementById('subText');
 
     const authState  = document.getElementById('authState');
     const loginBtn   = document.getElementById('loginBtn');
@@ -185,15 +161,18 @@
     const perfMin = document.getElementById('perfMin');
     const setupMin = document.getElementById('setupMin');
     const loopMode = document.getElementById('loopMode');
-
     const startBtn = document.getElementById('startBtn');
     const pauseBtn = document.getElementById('pauseBtn');
     const resetBtn = document.getElementById('resetBtn');
     const skipBtn  = document.getElementById('skipBtn');
     const applyBtn = document.getElementById('applyBtn');
 
-    // ==== Utils ====
-    const getClientId=()=>{let id=localStorage.getItem('clientId'); if(!id){id=(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)); localStorage.setItem('clientId',id);} return id;};
+    /* ===== Utils ===== */
+    const getClientId = () => {
+      let id = localStorage.getItem('clientId');
+      if (!id) { id = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)); localStorage.setItem('clientId', id); }
+      return id;
+    };
     const CLIENT_ID = getClientId();
     const toHiragana = s => s.normalize('NFKC').replace(/[ァ-ン]/g, ch => String.fromCharCode(ch.charCodeAt(0)-0x60)).replaceAll(' ','').replaceAll('　','').toLowerCase();
     const hex = buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
@@ -201,7 +180,7 @@
     let serverOffset=0; onValue(ref(db,'.info/serverTimeOffset'), s => { serverOffset = s.val() || 0; });
     const serverNow = () => Date.now()+serverOffset;
 
-    // ==== 状態 ====
+    /* ===== 状態 ===== */
     const TIMER_REF = ref(db, 'timer');
     let timer=null, isAdmin=false, sessionExp=0;
 
@@ -218,14 +197,35 @@
     const fmtClock = ts => new Date(ts).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
     const durationOf=(phase,t=timer)=>phase==='performance'?(t?.settings?.performanceDuration||0):(t?.settings?.setupDuration||0);
 
+    /* ===== 時間の自動フィット（改行防止＆はみ出し防止） ===== */
+    function fitTime(){
+      if(!timeWrap || !timeText) return;
+      const base = 1000;                         // 一度大きくしてからスケール算出
+      timeText.style.fontSize = base + 'px';
+      // 要素の実寸を取得して、ラッパに収まる倍率を計算
+      const scale = Math.min(
+        timeWrap.clientWidth  / Math.max(1, timeText.scrollWidth),
+        timeWrap.clientHeight / Math.max(1, timeText.scrollHeight)
+      );
+      const fs = Math.max(48, Math.floor(base * scale)); // 最小48pxは可読性のため
+      timeText.style.fontSize = fs + 'px';
+    }
+    new ResizeObserver(fitTime).observe(timeWrap);  // ラッパのサイズ変化に追従
+    window.addEventListener('resize', fitTime);
+    document.addEventListener('fullscreenchange', fitTime);
+
+    /* ===== 画面更新 ===== */
     const render = (updateInputs=false)=>{
       if(!timer) return;
       let remain=0;
       if (timer.status==='running' && timer.endTime) remain=Math.max(0, timer.endTime - serverNow());
       else remain=timer.remainingTime || durationOf(timer.currentPhase);
       timeText.textContent = fmtMS(remain);
+      fitTime(); // テキスト変更のたびにフィット
+
       phaseBadge.textContent = phaseLabel(timer.currentPhase);
       phaseBadge.className = phaseClass(timer.currentPhase);
+
       const np=nextPhase(timer.currentPhase), npDur=durationOf(np);
       const startAt=(timer.status==='running'&&timer.endTime)?fmtClock(timer.endTime):'—';
       subText.textContent = `次: ${np==='performance'?'演奏':'転換'} (${fmtMS(npDur)}) ／ 開始予定: ${startAt}`;
@@ -239,13 +239,17 @@
         if(ae!==loopMode) loopMode.checked=!!timer.settings?.isLoopMode;
       }
     };
+
     onValue(TIMER_REF, snap => { timer = snap.exists()?snap.val():null; render(true); });
 
-    // ==== 管理者ログイン ====
+    /* ===== 管理者ログイン ===== */
+    const loginModal = document.getElementById('loginModal');
     const openLogin=()=>{ loginModal.style.display='grid'; passphraseInput.focus(); };
     const closeLogin=()=>{ loginModal.style.display='none'; };
-    const showAdmin=()=>{ isAdmin=true; adminControls.style.display='grid'; authState.textContent=`🔓 管理者: ON（~${fmtClock(sessionExp)}）`; loginBtn.style.display='none'; logoutBtn.style.display='inline-block'; render(); };
-    const hideAdmin=()=>{ isAdmin=false; adminControls.style.display='none'; authState.textContent='🔒 管理者モード: OFF'; loginBtn.style.display='inline-block'; logoutBtn.style.display='none'; render(); };
+    const showAdmin=()=>{ isAdmin=true; document.getElementById('adminControls').style.display='grid';
+      authState.textContent=`🔓 管理者: ON`; loginBtn.style.display='none'; logoutBtn.style.display='inline-block'; render(); fitTime(); };
+    const hideAdmin=()=>{ isAdmin=false; document.getElementById('adminControls').style.display='none';
+      authState.textContent='🔒 管理者モード: OFF'; loginBtn.style.display='inline-block'; logoutBtn.style.display='none'; render(); fitTime(); };
 
     loginBtn.addEventListener('click', openLogin);
     logoutBtn.addEventListener('click', hideAdmin);
@@ -264,8 +268,9 @@
       try{ await createSession(pw); passphraseInput.value=''; }catch(e){ console.error(e); alert('合言葉が違うか、ルールに弾かれました'); }
     });
 
-    // ==== 操作 ====
+    /* ===== 操作 ===== */
     const write=obj=>update(TIMER_REF,{...obj,lastUpdated:serverTimestamp(),'meta/actor':CLIENT_ID});
+    const durationOf=(phase,t=timer)=>phase==='performance'?(t?.settings?.performanceDuration||0):(t?.settings?.setupDuration||0);
     const cmd_start=()=>{ if(!timer) return;
       const base=(timer.status==='paused')?(timer.remainingTime||durationOf(timer.currentPhase))
                :(timer.status==='stopped')?durationOf(timer.currentPhase)
@@ -288,15 +293,12 @@
     skipBtn .addEventListener('click', cmd_skip);
     applyBtn.addEventListener('click', cmd_apply);
 
-    // ==== 表示は全員で定期更新 ====
+    /* ===== 表示は全員で定期更新 ===== */
     setInterval(()=>{ render(false); }, 250);
-    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) render(false); });
+    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) { render(false); fitTime(); } });
 
-    // ==== フルスクリーン（ボタン/キー F） ====
-    async function toggleFullscreen(){
-      if (!document.fullscreenElement) { try{ await document.documentElement.requestFullscreen(); }catch{} }
-      else { try{ await document.exitFullscreen(); }catch{} }
-    }
+    /* ===== フルスクリーン ===== */
+    async function toggleFullscreen(){ if(!document.fullscreenElement){ try{await document.documentElement.requestFullscreen();}catch{} } else { try{await document.exitFullscreen();}catch{} } }
     fullscreenBtn.addEventListener('click', toggleFullscreen);
     document.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='f') toggleFullscreen(); });
   </script>
