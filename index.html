@@ -158,10 +158,13 @@
 
   <!-- Firebase v9+ modular SDK (ESM via CDN) -->
   <script type="module">
+    // =========================
+    // Firebase 初期化
+    // =========================
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
     import { getDatabase, ref, onValue, update, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
-    // ==== Firebase 設定（あなたの値のまま） ====
+    // Firebase 設定（プロジェクト固有の値）
     const firebaseConfig = {
       apiKey: "AIzaSyDo1vyMmbYQHJQZ8pjKapcwR-6H0-c_VsU",
       authDomain: "sync-timer-c3d72.firebaseapp.com",
@@ -174,138 +177,406 @@
     const app = initializeApp(firebaseConfig);
     const db  = getDatabase(app);
 
-    // ==== DOM ====
-    const phaseBadge = document.getElementById('phaseBadge');
-    const timeText   = document.getElementById('timeText');
-    const subText    = document.getElementById('subText');
+    // =========================
+    // DOM 取得
+    // =========================
+    const phaseBadge     = document.getElementById('phaseBadge');
+    const timeText       = document.getElementById('timeText');
+    const subText        = document.getElementById('subText');
 
-    const authState  = document.getElementById('authState');
-    const loginBtn   = document.getElementById('loginBtn');
-    const logoutBtn  = document.getElementById('logoutBtn');
-    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const authState      = document.getElementById('authState');
+    const loginBtn       = document.getElementById('loginBtn');
+    const logoutBtn      = document.getElementById('logoutBtn');
+    const fullscreenBtn  = document.getElementById('fullscreenBtn');
 
-    const loginModal = document.getElementById('loginModal');
-    const doLoginBtn = document.getElementById('doLoginBtn');
+    const loginModal     = document.getElementById('loginModal');
+    const doLoginBtn     = document.getElementById('doLoginBtn');
     const passphraseInput = document.getElementById('passphrase');
 
-    const adminControls = document.getElementById('adminControls');
-    const perfMin = document.getElementById('perfMin');
-    const setupMin = document.getElementById('setupMin');
-    const loopMode = document.getElementById('loopMode');
+    const adminControls  = document.getElementById('adminControls');
+    const perfMin        = document.getElementById('perfMin');
+    const setupMin       = document.getElementById('setupMin');
+    const loopMode       = document.getElementById('loopMode');
 
-    const startBtn = document.getElementById('startBtn');
-    const pauseBtn = document.getElementById('pauseBtn');
-    const resetBtn = document.getElementById('resetBtn');
-    const skipBtn  = document.getElementById('skipBtn');
-    const applyBtn = document.getElementById('applyBtn');
+    const startBtn       = document.getElementById('startBtn');
+    const pauseBtn       = document.getElementById('pauseBtn');
+    const resetBtn       = document.getElementById('resetBtn');
+    const skipBtn        = document.getElementById('skipBtn');
+    const applyBtn       = document.getElementById('applyBtn');
 
-    // ==== Utils ====
-    const getClientId=()=>{let id=localStorage.getItem('clientId'); if(!id){id=(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)); localStorage.setItem('clientId',id);} return id;};
+    // =========================
+    // 汎用ユーティリティ
+    // =========================
+
+    // クライアントごとに一意な ID をブラウザに保存
+    const getClientId = () => {
+      let id = localStorage.getItem('clientId');
+      if (!id) {
+        id = (crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2));
+        localStorage.setItem('clientId', id);
+      }
+      return id;
+    };
     const CLIENT_ID = getClientId();
-    const toHiragana = s => s.normalize('NFKC').replace(/[ァ-ン]/g, ch => String.fromCharCode(ch.charCodeAt(0)-0x60)).replaceAll(' ','').replaceAll('　','').toLowerCase();
-    const hex = buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 
-    let serverOffset=0; onValue(ref(db,'.info/serverTimeOffset'), s => { serverOffset = s.val() || 0; });
-    const serverNow = () => Date.now()+serverOffset;
+    // 入力をひらがなに寄せて正規化（全角・半角・カタカナなどを吸収）
+    const toHiragana = (s) =>
+      s
+        .normalize('NFKC')
+        .replace(/[ァ-ン]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60))
+        .replaceAll(' ', '')
+        .replaceAll('　', '')
+        .toLowerCase();
 
-    // ==== 状態 ====
+    // ArrayBuffer → 16 進文字列
+    const hex = (buf) =>
+      Array.from(new Uint8Array(buf))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+
+    // サーバ時刻との差分を Firebase から取得してローカルにキャッシュ
+    let serverOffset = 0;
+    onValue(ref(db, '.info/serverTimeOffset'), (s) => {
+      serverOffset = s.val() || 0;
+    });
+    const serverNow = () => Date.now() + serverOffset;
+
+    // =========================
+    // タイマー状態
+    // =========================
     const TIMER_REF = ref(db, 'timer');
-    let timer=null, isAdmin=false, sessionExp=0;
+    let timer = null;
+    let isAdmin = false;
+    let sessionExp = 0;
 
+    // DB が空のときに使うデフォルト状態
     const defaultTimer = () => ({
-      status:'stopped', currentPhase:'performance', endTime:null, remainingTime: 15*60*1000,
-      settings:{ performanceDuration:15*60*1000, setupDuration:5*60*1000, isLoopMode:true },
-      meta:{ actor: CLIENT_ID }, lastUpdated: serverTimestamp()
+      status: 'stopped',
+      currentPhase: 'performance',
+      endTime: null,
+      remainingTime: 15 * 60 * 1000,
+      settings: {
+        performanceDuration: 15 * 60 * 1000,
+        setupDuration: 5 * 60 * 1000,
+        isLoopMode: true
+      },
+      meta: { actor: CLIENT_ID },
+      lastUpdated: serverTimestamp()
     });
 
-    const phaseLabel = p => p==='performance'?'演奏中':'転換中';
-    const phaseClass = p => p==='performance'?'badge play':'badge setup';
-    const nextPhase  = p => p==='performance'?'setup':'performance';
-    const fmtMS = ms => { ms=Math.max(0,ms|0); const t=Math.floor(ms/1000); const m=String(Math.floor(t/60)).padStart(2,'0'); const s=String(t%60).padStart(2,'0'); return `${m}:${s}`; };
-    const fmtClock = ts => new Date(ts).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
-    const durationOf=(phase,t=timer)=>phase==='performance'?(t?.settings?.performanceDuration||0):(t?.settings?.setupDuration||0);
+    // フェーズに応じたラベルやクラス
+    const phaseLabel = (p) => (p === 'performance' ? '演奏中' : '転換中');
+    const phaseClass = (p) => (p === 'performance' ? 'badge play' : 'badge setup');
+    const nextPhase  = (p) => (p === 'performance' ? 'setup' : 'performance');
 
-    const render = (updateInputs=false)=>{
-      if(!timer) return;
-      let remain=0;
-      if (timer.status==='running' && timer.endTime) remain=Math.max(0, timer.endTime - serverNow());
-      else remain=timer.remainingTime || durationOf(timer.currentPhase);
+    // 00:00 形式に整形
+    const fmtMS = (ms) => {
+      ms = Math.max(0, ms | 0);
+      const totalSec = Math.floor(ms / 1000);
+      const m = String(Math.floor(totalSec / 60)).padStart(2, '0');
+      const s = String(totalSec % 60).padStart(2, '0');
+      return `${m}:${s}`;
+    };
+
+    // HH:MM 形式のローカル時間
+    const fmtClock = (ts) =>
+      new Date(ts).toLocaleTimeString('ja-JP', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+    // フェーズごとの設定済み時間を ms で取得
+    const durationOf = (phase, t = timer) =>
+      phase === 'performance'
+        ? (t?.settings?.performanceDuration || 0)
+        : (t?.settings?.setupDuration || 0);
+
+    // =========================
+    // 描画処理
+    // =========================
+    const render = (updateInputs = false) => {
+      if (!timer) return;
+
+      // 残り時間を算出（走っているときは endTime から計算）
+      let remain = 0;
+      if (timer.status === 'running' && timer.endTime) {
+        remain = Math.max(0, timer.endTime - serverNow());
+      } else {
+        remain = timer.remainingTime || durationOf(timer.currentPhase);
+      }
+
+      // メインの巨大タイマー表示
       timeText.textContent = fmtMS(remain);
       phaseBadge.textContent = phaseLabel(timer.currentPhase);
       phaseBadge.className = phaseClass(timer.currentPhase);
-      const np=nextPhase(timer.currentPhase), npDur=durationOf(np);
-      const startAt=(timer.status==='running'&&timer.endTime)?fmtClock(timer.endTime):'—';
-      subText.textContent = `次: ${np==='performance'?'演奏':'転換'} (${fmtMS(npDur)}) ／ 開始予定: ${startAt}`;
 
-      [startBtn,pauseBtn,resetBtn,skipBtn,applyBtn].forEach(b=>b.disabled=!isAdmin);
+      // 次フェーズと開始予定時刻の表示
+      const np = nextPhase(timer.currentPhase);
+      const npDur = durationOf(np);
+      const startAt =
+        timer.status === 'running' && timer.endTime
+          ? fmtClock(timer.endTime)
+          : '—';
+      subText.textContent = `次: ${np === 'performance' ? '演奏' : '転換'} (${fmtMS(npDur)}) ／ 開始予定: ${startAt}`;
 
-      if(updateInputs){
-        const ae=document.activeElement;
-        if(ae!==perfMin)  perfMin.value = Math.floor((timer.settings?.performanceDuration??900000)/60000);
-        if(ae!==setupMin) setupMin.value= Math.floor((timer.settings?.setupDuration??300000)/60000);
-        if(ae!==loopMode) loopMode.checked=!!timer.settings?.isLoopMode;
+      // 管理者でないと操作系ボタンは押せない
+      [startBtn, pauseBtn, resetBtn, skipBtn, applyBtn].forEach((btn) => {
+        btn.disabled = !isAdmin;
+      });
+
+      // フォーム入力値との同期（フォーカス中の要素は上書きしない）
+      if (updateInputs) {
+        const active = document.activeElement;
+        if (active !== perfMin) {
+          perfMin.value = Math.floor(
+            (timer.settings?.performanceDuration ?? 900000) / 60000
+          );
+        }
+        if (active !== setupMin) {
+          setupMin.value = Math.floor(
+            (timer.settings?.setupDuration ?? 300000) / 60000
+          );
+        }
+        if (active !== loopMode) {
+          loopMode.checked = !!timer.settings?.isLoopMode;
+        }
       }
     };
-    onValue(TIMER_REF, snap => { timer = snap.exists()?snap.val():null; render(true); });
 
-    // ==== 管理者ログイン ====
-    const openLogin=()=>{ loginModal.style.display='grid'; passphraseInput.focus(); };
-    const closeLogin=()=>{ loginModal.style.display='none'; };
-    const showAdmin=()=>{ isAdmin=true; adminControls.style.display='grid'; authState.textContent=`🔓 管理者: ON（~${fmtClock(sessionExp)}）`; loginBtn.style.display='none'; logoutBtn.style.display='inline-block'; render(); };
-    const hideAdmin=()=>{ isAdmin=false; adminControls.style.display='none'; authState.textContent='🔒 管理者モード: OFF'; loginBtn.style.display='inline-block'; logoutBtn.style.display='none'; render(); };
+    // Realtime Database の変更を購読して UI 更新
+    onValue(TIMER_REF, (snap) => {
+      timer = snap.exists() ? snap.val() : null;
+      render(true);
+    });
+
+    // =========================
+    // 管理者ログイン関連
+    // =========================
+    const openLogin = () => {
+      loginModal.style.display = 'grid';
+      passphraseInput.focus();
+    };
+
+    const closeLogin = () => {
+      loginModal.style.display = 'none';
+    };
+
+    const showAdmin = () => {
+      isAdmin = true;
+      adminControls.style.display = 'grid';
+      authState.textContent = `🔓 管理者: ON（~${fmtClock(sessionExp)}）`;
+      loginBtn.style.display = 'none';
+      logoutBtn.style.display = 'inline-block';
+      render();
+    };
+
+    const hideAdmin = () => {
+      isAdmin = false;
+      adminControls.style.display = 'none';
+      authState.textContent = '🔒 管理者モード: OFF';
+      loginBtn.style.display = 'inline-block';
+      logoutBtn.style.display = 'none';
+      render();
+    };
 
     loginBtn.addEventListener('click', openLogin);
     logoutBtn.addEventListener('click', hideAdmin);
-    loginModal.addEventListener('click', e=>{ if(e.target===loginModal) closeLogin(); });
 
-    async function sha256Hex(str){ const buf=new TextEncoder().encode(toHiragana(str)); const dig=await crypto.subtle.digest('SHA-256',buf); return hex(dig); }
-    async function createSession(pass){
-      const hash=await sha256Hex(pass);
-      const exp=serverNow()+2*60*60*1000;
-      await set(ref(db,`sessions/${CLIENT_ID}`),{hash,approved:true,expiresAt:exp});
-      sessionExp=exp; closeLogin(); showAdmin();
-      if(!timer) await set(TIMER_REF, defaultTimer());
-    }
-    doLoginBtn.addEventListener('click', async()=>{
-      const pw=passphraseInput.value.trim(); if(!pw) return alert('合言葉を入力してください');
-      try{ await createSession(pw); passphraseInput.value=''; }catch(e){ console.error(e); alert('合言葉が違うか、ルールに弾かれました'); }
+    // モーダル外クリックで閉じる
+    loginModal.addEventListener('click', (e) => {
+      if (e.target === loginModal) closeLogin();
     });
 
-    // ==== 操作 ====
-    const write=obj=>update(TIMER_REF,{...obj,lastUpdated:serverTimestamp(),'meta/actor':CLIENT_ID});
-    const cmd_start=()=>{ if(!timer) return;
-      const base=(timer.status==='paused')?(timer.remainingTime||durationOf(timer.currentPhase))
-               :(timer.status==='stopped')?durationOf(timer.currentPhase)
-               :Math.max(0,(timer.endTime||serverNow())-serverNow());
-      write({status:'running',endTime:serverNow()+base}); };
-    const cmd_pause=()=>{ if(!timer) return;
-      const remain=(timer.status==='running'&&timer.endTime)?Math.max(0,timer.endTime-serverNow()):(timer.remainingTime||0);
-      write({status:'paused',endTime:null,remainingTime:remain}); };
-    const cmd_reset=()=>{ const perf=Math.max(1,parseInt(perfMin.value||'15',10))*60000; const setup=Math.max(1,parseInt(setupMin.value||'5',10))*60000;
-      set(TIMER_REF, defaultTimer()).then(()=>{ write({status:'stopped',currentPhase:'performance',endTime:null,remainingTime:perf,settings:{performanceDuration:perf,setupDuration:setup,isLoopMode:!!loopMode.checked}}); }); };
-    const cmd_skip=()=>{ if(!timer) return; const np=timer.currentPhase==='performance'?'setup':'performance'; const dur=durationOf(np);
-      if(timer.status==='running') write({currentPhase:np,endTime:serverNow()+dur,status:'running'}); else write({currentPhase:np,remainingTime:dur,endTime:null}); };
-    const cmd_apply=()=>{ const perf=Math.max(1,parseInt(perfMin.value||'15',10))*60000; const setup=Math.max(1,parseInt(setupMin.value||'5',10))*60000; const isLoop=!!loopMode.checked;
-      const obj={settings:{performanceDuration:perf,setupDuration:setup,isLoopMode:isLoop}}; if(timer && timer.status!=='running') obj.remainingTime = (timer.currentPhase==='performance'?perf:setup);
-      write(obj); };
+    // 入力合言葉を SHA-256 + ひらがな正規化でハッシュ
+    async function sha256Hex(str) {
+      const buf = new TextEncoder().encode(toHiragana(str));
+      const dig = await crypto.subtle.digest('SHA-256', buf);
+      return hex(dig);
+    }
 
+    // セッションを Firebase に登録
+    async function createSession(pass) {
+      const hash = await sha256Hex(pass);
+      const exp = serverNow() + 2 * 60 * 60 * 1000; // 2時間有効
+      await set(ref(db, `sessions/${CLIENT_ID}`), {
+        hash,
+        approved: true,
+        expiresAt: exp
+      });
+      sessionExp = exp;
+      closeLogin();
+      showAdmin();
+      // タイマーが存在しない場合は初期状態を作る
+      if (!timer) await set(TIMER_REF, defaultTimer());
+    }
+
+    // 合言葉入力で管理者モード ON
+    doLoginBtn.addEventListener('click', async () => {
+      const pw = passphraseInput.value.trim();
+      if (!pw) {
+        alert('合言葉を入力してください');
+        return;
+      }
+      try {
+        await createSession(pw);
+        passphraseInput.value = '';
+      } catch (e) {
+        console.error(e);
+        alert('合言葉が違うか、ルールに弾かれました');
+      }
+    });
+
+    // =========================
+    // タイマー操作コマンド
+    // =========================
+
+    // 共通書き込みヘルパー
+    const write = (obj) =>
+      update(TIMER_REF, {
+        ...obj,
+        lastUpdated: serverTimestamp(),
+        'meta/actor': CLIENT_ID
+      });
+
+    // スタート / 再開
+    const cmd_start = () => {
+      if (!timer) return;
+
+      const base =
+        timer.status === 'paused'
+          ? (timer.remainingTime || durationOf(timer.currentPhase))
+          : timer.status === 'stopped'
+            ? durationOf(timer.currentPhase)
+            : Math.max(0, (timer.endTime || serverNow()) - serverNow());
+
+      write({
+        status: 'running',
+        endTime: serverNow() + base
+      });
+    };
+
+    // 一時停止
+    const cmd_pause = () => {
+      if (!timer) return;
+
+      const remain =
+        timer.status === 'running' && timer.endTime
+          ? Math.max(0, timer.endTime - serverNow())
+          : (timer.remainingTime || 0);
+
+      write({
+        status: 'paused',
+        endTime: null,
+        remainingTime: remain
+      });
+    };
+
+    // リセット（設定値で初期化）
+    const cmd_reset = () => {
+      const perf = Math.max(1, parseInt(perfMin.value || '15', 10)) * 60000;
+      const setup = Math.max(1, parseInt(setupMin.value || '5', 10)) * 60000;
+
+      set(TIMER_REF, defaultTimer()).then(() => {
+        write({
+          status: 'stopped',
+          currentPhase: 'performance',
+          endTime: null,
+          remainingTime: perf,
+          settings: {
+            performanceDuration: perf,
+            setupDuration: setup,
+            isLoopMode: !!loopMode.checked
+          }
+        });
+      });
+    };
+
+    // 次フェーズへスキップ
+    const cmd_skip = () => {
+      if (!timer) return;
+      const np = timer.currentPhase === 'performance' ? 'setup' : 'performance';
+      const dur = durationOf(np);
+
+      if (timer.status === 'running') {
+        write({
+          currentPhase: np,
+          endTime: serverNow() + dur,
+          status: 'running'
+        });
+      } else {
+        write({
+          currentPhase: np,
+          remainingTime: dur,
+          endTime: null
+        });
+      }
+    };
+
+    // 設定のみ反映（停止中なら残り時間も更新）
+    const cmd_apply = () => {
+      const perf = Math.max(1, parseInt(perfMin.value || '15', 10)) * 60000;
+      const setup = Math.max(1, parseInt(setupMin.value || '5', 10)) * 60000;
+      const isLoop = !!loopMode.checked;
+
+      const obj = {
+        settings: {
+          performanceDuration: perf,
+          setupDuration: setup,
+          isLoopMode: isLoop
+        }
+      };
+
+      if (timer && timer.status !== 'running') {
+        obj.remainingTime =
+          timer.currentPhase === 'performance' ? perf : setup;
+      }
+
+      write(obj);
+    };
+
+    // ボタンにコマンドを割り当て
     startBtn.addEventListener('click', cmd_start);
     pauseBtn.addEventListener('click', cmd_pause);
     resetBtn.addEventListener('click', cmd_reset);
-    skipBtn .addEventListener('click', cmd_skip);
+    skipBtn.addEventListener('click', cmd_skip);
     applyBtn.addEventListener('click', cmd_apply);
 
-    // ==== 表示は全員で定期更新 ====
-    setInterval(()=>{ render(false); }, 250);
-    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) render(false); });
+    // =========================
+    // 画面表示の定期更新
+    // =========================
+    setInterval(() => {
+      render(false);
+    }, 250);
 
-    // ==== フルスクリーン（ボタン/キー F） ====
-    async function toggleFullscreen(){
-      if (!document.fullscreenElement) { try{ await document.documentElement.requestFullscreen(); }catch{} }
-      else { try{ await document.exitFullscreen(); }catch{} }
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) render(false);
+    });
+
+    // =========================
+    // フルスクリーン制御（ボタン / キー F）
+    // =========================
+    async function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        try {
+          await document.documentElement.requestFullscreen();
+        } catch {
+          // 失敗しても特に何もしない
+        }
+      } else {
+        try {
+          await document.exitFullscreen();
+        } catch {
+          // 失敗しても特に何もしない
+        }
+      }
     }
+
     fullscreenBtn.addEventListener('click', toggleFullscreen);
-    document.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='f') toggleFullscreen(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() === 'f') toggleFullscreen();
+    });
   </script>
 </body>
 </html>
