@@ -54,13 +54,19 @@
       align-self:center;
       font-variant-numeric:tabular-nums;
       text-align:center; font-weight:1000; line-height:.88;
-      /* 画面の短辺ベースでぎりぎりまで拡大（横長＝高さ基準、縦長＝幅基準） */
-      font-size: clamp(140px, min(70vw, 65vh), 90vmin);
       letter-spacing:.02em; margin:0;
       text-shadow: 0 0 2px rgba(0,0,0,.6);
       white-space: nowrap;
     }
 
+    /* PC: ヘッダーや余白を差し引いた実効表示域を想定して最大化 */
+    @media (min-width: 769px){
+      .time{
+        font-size: clamp(160px, min(82vw, calc(100svh - 220px)), 100vmin);
+      }
+    }
+
+    /* モバイル: 幅優先でなるべく大きく */
     @media (max-width: 768px){
       .time{
         font-size: clamp(88px, min(85vw, 55vh), 75vmin);
