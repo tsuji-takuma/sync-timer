@@ -17,6 +17,7 @@
       background:radial-gradient(1200px 800px at 50% -10%,#151a20 0%,var(--bg) 60%);
       color:var(--fg);
       display:grid; place-items:center; padding:8px;
+      overflow-x:hidden;
     }
     .app{width:100%; max-width:1800px}
     header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
@@ -66,11 +67,26 @@
       }
     }
 
-    /* モバイル: 幅優先でなるべく大きく */
+    /* モバイル共通: 余白を詰めて横スクロールを防ぐ */
     @media (max-width: 768px){
+      body{padding:6px 4px;}
+      .app{max-width:100%;}
+      .timer{min-height:calc(100svh - 80px); padding:10px;}
+    }
+
+    /* モバイル横向き: 既存の大きめサイズを維持 */
+    @media (max-width: 768px) and (orientation: landscape){
       .time{
-        font-size: clamp(88px, min(85vw, 55vh), 75vmin);
+        font-size: clamp(96px, min(90vw, 60vh), 80vmin);
         letter-spacing:.015em;
+      }
+    }
+
+    /* モバイル縦向き: 4桁が収まるように横幅優先で縮小 */
+    @media (max-width: 768px) and (orientation: portrait){
+      .time{
+        font-size: clamp(80px, min(95vw, 42vh), 70vmin);
+        letter-spacing:.01em;
       }
     }
 
