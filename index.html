@@ -85,9 +85,9 @@
     /* モバイル縦向き: 4桁が収まるように横幅優先で縮小 */
     @media (max-width: 768px) and (orientation: portrait){
       .time{
-        /* 5文字(00:00)が画面幅に収まるよう 1文字 ≒ 0.6em を想定 */
-        font-size: clamp(64px, min(18vw, 35vh), 65vmin);
-        letter-spacing:.008em;
+        /* 5文字(00:00)が画面幅に収まるよう、vwとletter-spacingを調整 */
+        font-size: clamp(64px, min(17.5vw, 35vh), 65vmin);
+        letter-spacing: 0;
       }
     }
 
