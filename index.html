@@ -54,8 +54,8 @@
       align-self:center;
       font-variant-numeric:tabular-nums;
       text-align:center; font-weight:1000; line-height:.88;
-  /* 短辺に応じて縮小しやすくしつつ大型画面でも十分なサイズを確保 */
-  font-size: clamp(96px, 30vmin, 60vmin);
+      /* 画面サイズいっぱいまで使って改行しない範囲で最大化 */
+      font-size: clamp(120px, min(18vw, 55vh), 80vmin);
       letter-spacing:.02em; margin:0;
       text-shadow: 0 0 2px rgba(0,0,0,.6);
       white-space: nowrap;
@@ -63,7 +63,7 @@
 
     @media (max-width: 768px){
       .time{
-        font-size: clamp(64px, 24vmin, 36vmin);
+        font-size: clamp(72px, min(40vw, 45vh), 60vmin);
         letter-spacing:.015em;
       }
     }
